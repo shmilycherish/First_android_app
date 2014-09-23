@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.ActionBar;
 import android.app.Fragment;
 import android.graphics.BitmapFactory;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
@@ -22,10 +23,14 @@ import android.widget.TextView;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 
 
 public class BookList extends Activity {
@@ -66,9 +71,6 @@ public class BookList extends Activity {
      */
     public static class PlaceholderFragment extends Fragment {
 
-
-        private JSONObject jsonData;
-
         public PlaceholderFragment() {
         }
 
@@ -77,50 +79,89 @@ public class BookList extends Activity {
                                  Bundle savedInstanceState) {
             View rootView = inflater.inflate(R.layout.fragment_book_list, container, false);
 
-            jsonData = readBookData();
-
             final ListView listView = (ListView) rootView.findViewById(R.id.list);
 
-            listView.setAdapter(new BaseAdapter() {
+            new AsyncTask<String, Void, JSONObject>() {
                 @Override
-                public int getCount() {
-                    return jsonData.optJSONArray("books").length();
+                protected JSONObject doInBackground(String... strings) {
+                    final String url = strings[0];
+                    return readBookDataFromInternet(url);
                 }
 
                 @Override
-                public Object getItem(int position) {
-                    return jsonData.optJSONArray("books").opt(position);
+                protected void onPostExecute(JSONObject jsonObject) {
+                    super.onPostExecute(jsonObject);
+                    listView.setAdapter(new MyAdapter(jsonObject));
                 }
+            }.execute("https://api.douban.com/v2/book/search?tag=%E8%AE%A1%E7%AE%97%E6%9C%BA");
 
-                @Override
-                public long getItemId(int i) {
-                    return 0;
-                }
-
-                @Override
-                public View getView(int position, View view, ViewGroup viewGroup) {
-                    View listView = LayoutInflater.from(getActivity()).inflate(R.layout.list_item_book, viewGroup, false);
-
-                    JSONObject data = (JSONObject) getItem(position);
-
-                    ImageView bookCover = (ImageView) listView.findViewById(R.id.bookCover);
-                    RatingBar ratingBar = (RatingBar) listView.findViewById(R.id.bookRating);
-                    TextView bookInformation = (TextView) listView.findViewById(R.id.bookInformation);
-                    TextView bookName = (TextView) listView.findViewById(R.id.bookName);
-
-                    bookCover.setImageBitmap(BitmapFactory.decodeResource(getResources(), R.drawable.ic_default_cover));
-                    ratingBar.setRating((float) (data.optJSONObject("rating").optDouble("average") / 2));
-                    bookName.setText(data.optString("title"));
-                    bookInformation.setText(TextUtils.join("/", new String[]{
-                                    data.optJSONArray("author").optString(0),
-                                    data.optString("publisher"),
-                                    data.optString("pubdate")}
-                    ));
-
-                    return listView;
-                }
-            });
             return rootView;
+        }
+
+        class MyAdapter extends BaseAdapter {
+
+            private JSONObject jsonData;
+
+            public MyAdapter(JSONObject jsonData) {
+                this.jsonData = jsonData;
+            }
+
+            @Override
+            public int getCount() {
+                return jsonData.optJSONArray("books").length();
+            }
+
+            @Override
+            public Object getItem(int position) {
+                return jsonData.optJSONArray("books").opt(position);
+            }
+
+            @Override
+            public long getItemId(int i) {
+                return 0;
+            }
+
+            @Override
+            public View getView(int position, View view, ViewGroup viewGroup) {
+
+                ViewHolder viewHolder;
+
+                if (view == null) {
+                    viewHolder = new ViewHolder();
+
+                    LayoutInflater inflater = LayoutInflater.from(getActivity());
+                    view = inflater.inflate(R.layout.list_item_book, viewGroup, false);
+
+                    viewHolder.bookCover = (ImageView) view.findViewById(R.id.bookCover);
+                    viewHolder.ratingBar = (RatingBar) view.findViewById(R.id.bookRating);
+                    viewHolder.bookInformation = (TextView) view.findViewById(R.id.bookInformation);
+                    viewHolder.bookName = (TextView) view.findViewById(R.id.bookName);
+
+                    view.setTag(viewHolder);
+                } else {
+                    viewHolder = (ViewHolder) view.getTag();
+                }
+
+                JSONObject data = (JSONObject) getItem(position);
+
+                viewHolder.bookCover.setImageBitmap(BitmapFactory.decodeResource(getResources(), R.drawable.ic_default_cover));
+                viewHolder.ratingBar.setRating((float) (data.optJSONObject("rating").optDouble("average") / 2));
+                viewHolder.bookName.setText(data.optString("title"));
+                viewHolder.bookInformation.setText(TextUtils.join("/", new String[]{
+                                data.optJSONArray("author").optString(0),
+                                data.optString("publisher"),
+                                data.optString("pubdate")}
+                ));
+
+                return view;
+            }
+        }
+
+        static class ViewHolder {
+            ImageView bookCover;
+            RatingBar ratingBar;
+            TextView bookName;
+            TextView bookInformation;
         }
 
         private JSONObject readBookData() {
@@ -131,19 +172,48 @@ public class BookList extends Activity {
 
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(in));
             try {
-
                 jsonData = new JSONObject(bufferedReader.readLine());
-                bufferedReader.close();
-                in.close();
 
                 Log.d("print json data", jsonData.toString());
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (JSONException e) {
                 e.printStackTrace();
+            } finally {
+                try {
+                    bufferedReader.close();
+                    in.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
 
             return jsonData;
+        }
+
+        private JSONObject readBookDataFromInternet(String urlString) {
+
+            StringBuffer stringBuffer = new StringBuffer();
+            JSONObject json = new JSONObject();
+            String line;
+            try {
+                URL url = new URL(urlString);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                while ((line = bufferedReader.readLine()) != null) {
+                    stringBuffer.append(line);
+                }
+                bufferedReader.close();
+                json = new JSONObject(stringBuffer.toString());
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            return json;
         }
     }
 }
