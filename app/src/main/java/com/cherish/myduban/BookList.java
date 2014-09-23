@@ -3,6 +3,7 @@ package com.cherish.myduban;
 import android.app.Activity;
 import android.app.ActionBar;
 import android.app.Fragment;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -124,7 +125,7 @@ public class BookList extends Activity {
             @Override
             public View getView(int position, View view, ViewGroup viewGroup) {
 
-                ViewHolder viewHolder;
+                final ViewHolder viewHolder;
 
                 if (view == null) {
                     viewHolder = new ViewHolder();
@@ -144,7 +145,7 @@ public class BookList extends Activity {
 
                 JSONObject data = (JSONObject) getItem(position);
 
-                viewHolder.bookCover.setImageBitmap(BitmapFactory.decodeResource(getResources(), R.drawable.ic_default_cover));
+//                viewHolder.bookCover.setImageBitmap(BitmapFactory.decodeResource(getResources(), R.drawable.ic_default_cover));
                 viewHolder.ratingBar.setRating((float) (data.optJSONObject("rating").optDouble("average") / 2));
                 viewHolder.bookName.setText(data.optString("title"));
                 viewHolder.bookInformation.setText(TextUtils.join("/", new String[]{
@@ -152,6 +153,19 @@ public class BookList extends Activity {
                                 data.optString("publisher"),
                                 data.optString("pubdate")}
                 ));
+
+                final String imageUrl = data.optJSONObject("images").optString("large");
+                viewHolder.bookCover.setTag(imageUrl.hashCode());
+
+                ImageLoader.loadImage(imageUrl, new ImageLoader.ImageLoaderListener() {
+                    @Override
+                    public void onImageLoaded(Bitmap bitmap) {
+                        if(bitmap != null && viewHolder.bookCover.getTag().equals(imageUrl.hashCode())){
+                            viewHolder.bookCover.setImageBitmap(bitmap);
+                        }
+                    }
+                });
+
 
                 return view;
             }
